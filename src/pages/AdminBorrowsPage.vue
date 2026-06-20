@@ -13,7 +13,7 @@ import Spinner from '@/components/Spinner.vue'
 import { statsApi, borrowsApi, usersApi, type Borrow, type Stats, type User, type BorrowStatus } from '@/lib/api'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
-import { formatDate, dueCountdown, initials } from '@/lib/format'
+import { formatDate, dueCountdown, initials, getDueLevel, getDueStyles, daysUntilDue, type DueLevel } from '@/lib/format'
 
 useTheme()
 const { success, error } = useToast()
@@ -33,6 +33,33 @@ const userFilter = ref('')
 
 const showReturnConfirm = ref(false)
 const returningBorrow = ref<Borrow | null>(null)
+
+const overdueList = computed(() => {
+  return borrows.value
+    .filter((b) => !b.return_date)
+    .filter((b) => getBorrowDueLevel(b) === 'danger')
+    .sort((a, b) => borrowSortKey(a) - borrowSortKey(b))
+})
+
+const warningList = computed(() => {
+  return borrows.value
+    .filter((b) => !b.return_date)
+    .filter((b) => getBorrowDueLevel(b) === 'warning')
+    .sort((a, b) => borrowSortKey(a) - borrowSortKey(b))
+})
+
+function getBorrowDueLevel(borrow: Borrow): DueLevel {
+  return getDueLevel(borrow.due_date, borrow.return_date)
+}
+
+function getBorrowStyles(borrow: Borrow) {
+  return getDueStyles(getBorrowDueLevel(borrow))
+}
+
+function borrowSortKey(borrow: Borrow): number {
+  const d = daysUntilDue(borrow.due_date, borrow.return_date)
+  return d ?? 9999
+}
 
 const statusOptions: { value: BorrowStatus | ''; label: string }[] = [
   { value: '', label: '全部状态' },
@@ -200,6 +227,126 @@ onMounted(() => {
       </div>
     </div>
 
+    <div
+      v-if="overdueList.length > 0"
+      class="mb-5 overflow-hidden rounded-2xl border border-red-300 bg-red-50/60 shadow-card"
+    >
+      <div class="flex items-center justify-between gap-3 border-b border-red-200/60 bg-red-100/40 px-5 py-3">
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 text-red-600">
+            <AlertTriangle class="h-4 w-4" />
+          </div>
+          <div>
+            <h3 class="font-serif text-sm font-bold text-red-800">逾期未还催还列表</h3>
+            <p class="text-xs text-red-700/70">共 {{ overdueList.length }} 本图书已逾期，请及时催还</p>
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-red-200/60">
+        <div
+          v-for="borrow in overdueList"
+          :key="borrow.id"
+          class="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-red-100/40"
+        >
+          <div class="w-10 shrink-0">
+            <BookCover
+              v-if="borrow.book"
+              :color="borrow.book.cover_color"
+              :title="borrow.book.title"
+              :author="borrow.book.author"
+              size="xs"
+            />
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="line-clamp-1 font-serif text-sm font-semibold text-ink-700">
+              {{ borrow.book?.title || '—' }}
+            </p>
+            <p class="mt-0.5 text-xs text-charcoal-muted">
+              {{ borrow.book?.author }} · 借阅人：{{ borrow.user?.name || '—' }}（@{{ borrow.user?.username || '—' }}）
+            </p>
+          </div>
+          <div class="shrink-0 text-right">
+            <p class="font-mono text-sm font-bold text-red-700">
+              {{ dueCountdown(borrow.due_date, borrow.return_date) }}
+            </p>
+            <p class="mt-0.5 text-xs text-charcoal-muted">应还：{{ formatDate(borrow.due_date) }}</p>
+          </div>
+          <div class="shrink-0">
+            <BaseButton
+              size="sm"
+              variant="danger"
+              @click="openReturnConfirm(borrow)"
+            >
+              <template #icon>
+                <RotateCcw class="h-3.5 w-3.5" />
+              </template>
+              催还
+            </BaseButton>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="warningList.length > 0"
+      class="mb-5 overflow-hidden rounded-2xl border border-yellow-300 bg-yellow-50/60 shadow-card"
+    >
+      <div class="flex items-center justify-between gap-3 border-b border-yellow-200/60 bg-yellow-100/40 px-5 py-3">
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-100 text-yellow-700">
+            <Clock class="h-4 w-4" />
+          </div>
+          <div>
+            <h3 class="font-serif text-sm font-bold text-yellow-800">即将到期提醒</h3>
+            <p class="text-xs text-yellow-700/70">共 {{ warningList.length }} 本图书将在3天内到期</p>
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-yellow-200/60">
+        <div
+          v-for="borrow in warningList"
+          :key="borrow.id"
+          class="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-yellow-100/40"
+        >
+          <div class="w-10 shrink-0">
+            <BookCover
+              v-if="borrow.book"
+              :color="borrow.book.cover_color"
+              :title="borrow.book.title"
+              :author="borrow.book.author"
+              size="xs"
+            />
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="line-clamp-1 font-serif text-sm font-semibold text-ink-700">
+              {{ borrow.book?.title || '—' }}
+            </p>
+            <p class="mt-0.5 text-xs text-charcoal-muted">
+              {{ borrow.book?.author }} · 借阅人：{{ borrow.user?.name || '—' }}（@{{ borrow.user?.username || '—' }}）
+            </p>
+          </div>
+          <div class="shrink-0 text-right">
+            <p class="font-mono text-sm font-bold text-yellow-800">
+              {{ dueCountdown(borrow.due_date, borrow.return_date) }}
+            </p>
+            <p class="mt-0.5 text-xs text-charcoal-muted">应还：{{ formatDate(borrow.due_date) }}</p>
+          </div>
+          <div class="shrink-0">
+            <BaseButton
+              size="sm"
+              variant="ghost"
+              @click="openReturnConfirm(borrow)"
+            >
+              <template #icon>
+                <RotateCcw class="h-3.5 w-3.5" />
+              </template>
+              标记归还
+            </BaseButton>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end">
       <BaseSelect
         v-model="statusFilter"
@@ -257,7 +404,14 @@ onMounted(() => {
             <tr
               v-for="borrow in borrows"
               :key="borrow.id"
-              class="border-b border-paper-300/60 transition-colors hover:bg-ink-50/30 last:border-b-0"
+              :class="[
+                'border-b transition-colors last:border-b-0',
+                getBorrowDueLevel(borrow) === 'danger'
+                  ? 'border-red-200/60 bg-red-50/40 hover:bg-red-100/50'
+                  : getBorrowDueLevel(borrow) === 'warning'
+                    ? 'border-yellow-200/60 bg-yellow-50/40 hover:bg-yellow-100/50'
+                    : 'border-paper-300/60 hover:bg-ink-50/30',
+              ]"
             >
               <td class="px-4 py-3">
                 <div class="flex items-center gap-3">
@@ -311,9 +465,7 @@ onMounted(() => {
                 <span
                   :class="[
                     'font-mono text-xs',
-                    borrow.status === 'overdue' ? 'text-red-600' :
-                    borrow.status === 'returned' ? 'text-charcoal-muted' :
-                    'text-ink-600',
+                    getBorrowStyles(borrow).textClass,
                   ]"
                 >
                   {{ dueCountdown(borrow.due_date, borrow.return_date) }}

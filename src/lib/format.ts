@@ -20,19 +20,72 @@ export function formatDateTime(s: string | null): string {
   return `${formatDate(s)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-/** 距到期日的相对描述 */
-export function dueCountdown(dueDate: string | null, returnDate: string | null): string {
-  if (returnDate) return '已归还'
+/** 计算距到期日的天数（负数表示逾期） */
+export function daysUntilDue(dueDate: string | null, returnDate: string | null): number | null {
+  if (returnDate) return null
   const d = parseDate(dueDate)
-  if (!d) return ''
+  if (!d) return null
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const end = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const diff = Math.round((end.getTime() - start.getTime()) / 86400000)
+  return Math.round((end.getTime() - start.getTime()) / 86400000)
+}
+
+/** 到期警告级别：normal 正常 | warning 3天内到期 | danger 已逾期 */
+export type DueLevel = 'normal' | 'warning' | 'danger' | 'returned'
+
+export function getDueLevel(dueDate: string | null, returnDate: string | null): DueLevel {
+  if (returnDate) return 'returned'
+  const diff = daysUntilDue(dueDate, returnDate)
+  if (diff === null) return 'normal'
+  if (diff < 0) return 'danger'
+  if (diff <= 3) return 'warning'
+  return 'normal'
+}
+
+/** 距到期日的相对描述 */
+export function dueCountdown(dueDate: string | null, returnDate: string | null): string {
+  if (returnDate) return '已归还'
+  const diff = daysUntilDue(dueDate, returnDate)
+  if (diff === null) return ''
   if (diff < 0) return `逾期 ${Math.abs(diff)} 天`
   if (diff === 0) return '今日到期'
   if (diff === 1) return '明日到期'
   return `剩余 ${diff} 天`
+}
+
+/** 获取到期级别对应的样式类 */
+export interface DueStyle {
+  borderClass: string
+  bgClass: string
+  textClass: string
+  badgeClass: string
+}
+
+export function getDueStyles(level: DueLevel): DueStyle {
+  switch (level) {
+    case 'danger':
+      return {
+        borderClass: 'border-red-300',
+        bgClass: 'bg-red-50/60',
+        textClass: 'text-red-700',
+        badgeClass: 'bg-red-100 text-red-700 border-red-200',
+      }
+    case 'warning':
+      return {
+        borderClass: 'border-yellow-300',
+        bgClass: 'bg-yellow-50/60',
+        textClass: 'text-yellow-800',
+        badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      }
+    default:
+      return {
+        borderClass: 'border-paper-300',
+        bgClass: 'bg-paper-50',
+        textClass: 'text-ink-600',
+        badgeClass: 'bg-ink-50 text-ink-700 border-ink-200',
+      }
+  }
 }
 
 export interface StatusMeta {

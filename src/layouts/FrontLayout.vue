@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, RouterView } from 'vue-router'
 import { BookMarked, Library, Menu, X, ClipboardList, UserRound } from 'lucide-vue-next'
 import UserMenu from '@/components/UserMenu.vue'
+
+
 
 const navOpen = ref(false)
 
@@ -81,7 +83,7 @@ const links = [
     </header>
 
     <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-      <slot />
+      <RouterView />
     </main>
 
     <footer class="border-t border-paper-300/60 py-5 text-center text-xs text-charcoal-muted">

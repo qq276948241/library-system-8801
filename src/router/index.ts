@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw, type RouteLocationNormalized, type NavigationGuardNext } from 'vue-router'
 import FrontLayout from '@/layouts/FrontLayout.vue'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import LoginPage from '@/pages/LoginPage.vue'
@@ -10,28 +10,19 @@ import AdminUsersPage from '@/pages/AdminUsersPage.vue'
 import AdminBorrowsPage from '@/pages/AdminBorrowsPage.vue'
 import { useAuth } from '@/composables/useAuth'
 
-const { isLogged, isAdmin, ready, restore } = useAuth()
-
-let restorePromise = null
+let restorePromise: Promise<void> | null = null
 
 async function ensureReady() {
+  const { restore } = useAuth()
   if (!restorePromise) {
     restorePromise = restore()
   }
   await restorePromise
-  if (!ready.value) {
-    await new Promise((resolve) => {
-      const check = () => {
-        if (ready.value) resolve()
-        else setTimeout(check, 50)
-      }
-      check()
-    })
-  }
 }
 
-async function requireAuth(to, _from, next) {
+async function requireAuth(to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) {
   await ensureReady()
+  const { isLogged } = useAuth()
   if (!isLogged.value) {
     next({ name: 'login', query: { redirect: to.fullPath } })
   } else {
@@ -39,8 +30,9 @@ async function requireAuth(to, _from, next) {
   }
 }
 
-async function requireAdmin(to, _from, next) {
+async function requireAdmin(to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) {
   await ensureReady()
+  const { isLogged, isAdmin } = useAuth()
   if (!isLogged.value) {
     next({ name: 'login', query: { redirect: to.fullPath } })
   } else if (!isAdmin.value) {
@@ -50,7 +42,7 @@ async function requireAdmin(to, _from, next) {
   }
 }
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'login',

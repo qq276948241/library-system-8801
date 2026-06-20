@@ -1,33 +1,107 @@
 package main
 
 import (
-	"time"
-
 	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
 )
 
-func keysInt64(m map[int64]bool) []int64 {
-	ks := make([]int64, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
-	}
-	return ks
+type borrowJoinRow struct {
+	ID         int64   `db:"id"`
+	UserID     int64   `db:"user_id"`
+	BookID     int64   `db:"book_id"`
+	BorrowDate string  `db:"borrow_date"`
+	DueDate    string  `db:"due_date"`
+	ReturnDate *string `db:"return_date"`
+	Status     string  `db:"status"`
+
+	BookID2          *int64  `db:"b_id"`
+	BookTitle        *string `db:"b_title"`
+	BookAuthor       *string `db:"b_author"`
+	BookISBN         *string `db:"b_isbn"`
+	BookCategory     *string `db:"b_category"`
+	BookDescription  *string `db:"b_description"`
+	BookCoverColor   *string `db:"b_cover_color"`
+	BookPublisher    *string `db:"b_publisher"`
+	BookPublishedYear *int   `db:"b_published_year"`
+	BookTotalCopies  *int    `db:"b_total_copies"`
+	BookAvailCopies  *int    `db:"b_available_copies"`
+	BookCreatedAt    *string `db:"b_created_at"`
+
+	UserID2       *int64  `db:"u_id"`
+	UserUsername  *string `db:"u_username"`
+	UserName      *string `db:"u_name"`
+	UserRole      *string `db:"u_role"`
+	UserEmail     *string `db:"u_email"`
+	UserCreatedAt *string `db:"u_created_at"`
 }
 
-func deriveStatus(dueDate, returnDate string) string {
-	if returnDate != "" {
-		return "returned"
+func (row *borrowJoinRow) toBorrow() Borrow {
+	b := Borrow{
+		ID:         row.ID,
+		UserID:     row.UserID,
+		BookID:     row.BookID,
+		BorrowDate: row.BorrowDate,
+		DueDate:    row.DueDate,
+		ReturnDate: row.ReturnDate,
+		Status:     row.Status,
 	}
-	t, err := time.Parse(time.RFC3339, dueDate)
-	if err != nil {
-		return "borrowed"
+	if row.BookID2 != nil {
+		b.Book = &Book{
+			ID:              *row.BookID2,
+			Title:           safeStr(row.BookTitle),
+			Author:          safeStr(row.BookAuthor),
+			ISBN:            safeStr(row.BookISBN),
+			Category:        safeStr(row.BookCategory),
+			Description:     safeStr(row.BookDescription),
+			CoverColor:      safeStr(row.BookCoverColor),
+			Publisher:       safeStr(row.BookPublisher),
+			PublishedYear:   safeInt(row.BookPublishedYear),
+			TotalCopies:     safeInt(row.BookTotalCopies),
+			AvailableCopies: safeInt(row.BookAvailCopies),
+			CreatedAt:       safeStr(row.BookCreatedAt),
+		}
 	}
-	if t.Before(time.Now()) {
-		return "overdue"
+	if row.UserID2 != nil {
+		b.User = &User{
+			ID:        *row.UserID2,
+			Username:  safeStr(row.UserUsername),
+			Name:      safeStr(row.UserName),
+			Role:      safeStr(row.UserRole),
+			Email:     safeStr(row.UserEmail),
+			CreatedAt: safeStr(row.UserCreatedAt),
+		}
 	}
-	return "borrowed"
+	enrichBorrow(&b)
+	return b
 }
+
+func safeStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func safeInt(i *int) int {
+	if i == nil {
+		return 0
+	}
+	return *i
+}
+
+const borrowJoinSQL = `
+SELECT
+  br.id, br.user_id, br.book_id, br.borrow_date, br.due_date, br.return_date, br.status,
+  b.id AS b_id, b.title AS b_title, b.author AS b_author, b.isbn AS b_isbn,
+  b.category AS b_category, b.description AS b_description, b.cover_color AS b_cover_color,
+  b.publisher AS b_publisher, b.published_year AS b_published_year,
+  b.total_copies AS b_total_copies, b.available_copies AS b_available_copies,
+  b.created_at AS b_created_at,
+  u.id AS u_id, u.username AS u_username, u.name AS u_name, u.role AS u_role,
+  u.email AS u_email, u.created_at AS u_created_at
+FROM borrow_records br
+LEFT JOIN books b ON br.book_id = b.id
+LEFT JOIN users u ON br.user_id = u.id
+`
 
 func handleListBorrows(c *gin.Context) {
 	page, pageSize := pagination(c)
@@ -35,70 +109,38 @@ func handleListBorrows(c *gin.Context) {
 	uid := getUID(c)
 	role := getRole(c)
 
-	where := "1=1"
+	where := "WHERE 1=1"
 	args := []interface{}{}
 	if role != "admin" {
-		where += " AND user_id=?"
+		where += " AND br.user_id=?"
 		args = append(args, uid)
 	} else if uidStr := c.Query("userId"); uidStr != "" {
-		where += " AND user_id=?"
+		where += " AND br.user_id=?"
 		args = append(args, uidStr)
 	}
 	switch status {
 	case "borrowed":
-		where += " AND return_date IS NULL AND due_date >= datetime('now')"
+		where += " AND br.return_date IS NULL AND br.due_date >= datetime('now')"
 	case "overdue":
-		where += " AND return_date IS NULL AND due_date < datetime('now')"
+		where += " AND br.return_date IS NULL AND br.due_date < datetime('now')"
 	case "returned":
-		where += " AND return_date IS NOT NULL"
+		where += " AND br.return_date IS NOT NULL"
 	}
 
 	var total int64
-	db.Get(&total, "SELECT COUNT(*) FROM borrow_records WHERE "+where, args...)
+	db.Get(&total, "SELECT COUNT(*) FROM borrow_records br "+where, args...)
 
 	listArgs := append([]interface{}{}, args...)
 	listArgs = append(listArgs, pageSize, (page-1)*pageSize)
-	var recs []Borrow
-	db.Select(&recs, "SELECT * FROM borrow_records WHERE "+where+" ORDER BY borrow_date DESC, id DESC LIMIT ? OFFSET ?", listArgs...)
 
-	bookIDs := map[int64]bool{}
-	userIDs := map[int64]bool{}
-	for _, r := range recs {
-		bookIDs[r.BookID] = true
-		userIDs[r.UserID] = true
+	var rows []borrowJoinRow
+	db.Select(&rows, borrowJoinSQL+where+" ORDER BY br.borrow_date DESC, br.id DESC LIMIT ? OFFSET ?", listArgs...)
+
+	recs := make([]Borrow, len(rows))
+	for i := range rows {
+		recs[i] = rows[i].toBorrow()
 	}
-	books := map[int64]*Book{}
-	users := map[int64]*User{}
-	if len(bookIDs) > 0 {
-		var bs []Book
-		query, qargs, _ := sqlx.In("SELECT * FROM books WHERE id IN (?)", keysInt64(bookIDs))
-		db.Select(&bs, query, qargs...)
-		for i := range bs {
-			bs[i].CreatedAt = normTime(bs[i].CreatedAt)
-			books[bs[i].ID] = &bs[i]
-		}
-	}
-	if len(userIDs) > 0 {
-		var us []User
-		query, qargs, _ := sqlx.In("SELECT id, username, name, role, email, created_at FROM users WHERE id IN (?)", keysInt64(userIDs))
-		db.Select(&us, query, qargs...)
-		for i := range us {
-			us[i].CreatedAt = normTime(us[i].CreatedAt)
-			users[us[i].ID] = &us[i]
-		}
-	}
-	for i := range recs {
-		recs[i].BorrowDate = normTime(recs[i].BorrowDate)
-		recs[i].DueDate = normTime(recs[i].DueDate)
-		recs[i].ReturnDate = normTime(recs[i].ReturnDate)
-		recs[i].Status = deriveStatus(recs[i].DueDate, recs[i].ReturnDate)
-		if b, ok := books[recs[i].BookID]; ok {
-			recs[i].Book = b
-		}
-		if u, ok := users[recs[i].UserID]; ok {
-			recs[i].User = u
-		}
-	}
+
 	ok(c, PageData{List: recs, Total: total, Page: page, PageSize: pageSize})
 }
 

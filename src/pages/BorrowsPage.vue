@@ -13,7 +13,7 @@ import Spinner from '@/components/Spinner.vue'
 import { borrowsApi, type Borrow, type BorrowStatus } from '@/lib/api'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
-import { formatDate, dueCountdown } from '@/lib/format'
+import { formatDate, dueCountdown, getDueLevel, getDueStyles, type DueLevel } from '@/lib/format'
 
 useTheme()
 const { success, error } = useToast()
@@ -35,6 +35,14 @@ const statusOptions = [
   { value: 'overdue', label: '已逾期' },
   { value: 'returned', label: '已归还' },
 ]
+
+function getBorrowDueLevel(borrow: Borrow): DueLevel {
+  return getDueLevel(borrow.due_date, borrow.return_date)
+}
+
+function getBorrowStyles(borrow: Borrow) {
+  return getDueStyles(getBorrowDueLevel(borrow))
+}
 
 async function loadBorrows() {
   loading.value = true
@@ -125,7 +133,11 @@ onMounted(() => {
       <div
         v-for="borrow in borrows"
         :key="borrow.id"
-        class="overflow-hidden rounded-2xl border border-paper-300 bg-paper-50 shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
+        :class="[
+          'overflow-hidden rounded-2xl border shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift',
+          getBorrowStyles(borrow).borderClass,
+          getBorrowStyles(borrow).bgClass,
+        ]"
       >
         <div class="flex flex-col sm:flex-row">
           <div class="p-3 sm:w-32">
@@ -159,16 +171,22 @@ onMounted(() => {
                   <span class="text-charcoal-muted">应还日期：</span>
                   <span class="font-mono text-charcoal-soft">{{ formatDate(borrow.due_date) }}</span>
                 </div>
-                <div class="col-span-2">
+                <div class="col-span-2 flex flex-wrap items-center gap-2">
                   <span class="text-charcoal-muted">状态：</span>
+                  <span
+                    v-if="getBorrowDueLevel(borrow) !== 'normal' && getBorrowDueLevel(borrow) !== 'returned'"
+                    :class="[
+                      'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+                      getBorrowStyles(borrow).badgeClass,
+                    ]"
+                  >
+                    <span class="h-1.5 w-1.5 rounded-full" :class="getBorrowDueLevel(borrow) === 'danger' ? 'bg-red-500' : 'bg-yellow-500'"></span>
+                    {{ getBorrowDueLevel(borrow) === 'danger' ? '已逾期' : '即将到期' }}
+                  </span>
                   <span
                     :class="[
                       'font-medium',
-                      borrow.status === 'overdue'
-                        ? 'text-red-600'
-                        : borrow.status === 'returned'
-                          ? 'text-brass-600'
-                          : 'text-ink-600',
+                      getBorrowStyles(borrow).textClass,
                     ]"
                   >
                     {{ dueCountdown(borrow.due_date, borrow.return_date) }}

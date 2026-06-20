@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { UserRound, Mail, Calendar, Key, Lock, Eye, EyeOff, BookOpen, CheckCircle, AlertTriangle } from 'lucide-vue-next'
+import { UserRound, Mail, Calendar, Key, Lock, Eye, EyeOff, BookOpen, CheckCircle, AlertTriangle, ChevronDown } from 'lucide-vue-next'
+import BookCover from '@/components/BookCover.vue'
 import BaseInput from '@/components/BaseInput.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
@@ -11,8 +12,7 @@ import { authApi, borrowsApi, type User, type Borrow } from '@/lib/api'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
-import { formatDate } from '@/lib/format'
-import { initials } from '@/lib/format'
+import { formatDate, dueCountdown, getDueLevel, getDueStyles, daysUntilDue, initials, type DueLevel } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 useTheme()
@@ -36,6 +36,9 @@ const formErrors = ref<Record<string, string>>({})
 const currentBorrows = ref(0)
 const completedBorrows = ref(0)
 const overdueCount = ref(0)
+const warningCount = ref(0)
+const pendingBorrows = ref<Borrow[]>([])
+const showPendingList = ref(false)
 
 const roleLabel = computed(() => {
   return user.value?.role === 'admin' ? '管理员' : '学生'
@@ -47,6 +50,19 @@ const roleBadgeClass = computed(() => {
     : 'bg-ink-50 text-ink-700 border-ink-200'
 })
 
+function getBorrowDueLevel(borrow: Borrow): DueLevel {
+  return getDueLevel(borrow.due_date, borrow.return_date)
+}
+
+function getBorrowStyles(borrow: Borrow) {
+  return getDueStyles(getBorrowDueLevel(borrow))
+}
+
+function borrowSortKey(borrow: Borrow): number {
+  const d = daysUntilDue(borrow.due_date, borrow.return_date)
+  return d ?? 9999
+}
+
 async function loadBorrowStats() {
   try {
     const res = await borrowsApi.list({ pageSize: 1000 })
@@ -54,6 +70,14 @@ async function loadBorrowStats() {
     currentBorrows.value = borrows.filter((b) => b.status === 'borrowed').length
     completedBorrows.value = borrows.filter((b) => b.status === 'returned').length
     overdueCount.value = borrows.filter((b) => b.status === 'overdue').length
+    const pendingAll = borrows.filter((b) => !b.return_date).sort(
+      (a, b) => borrowSortKey(a) - borrowSortKey(b),
+    )
+    pendingBorrows.value = pendingAll
+    warningCount.value = pendingAll.filter((b) => {
+      const level = getBorrowDueLevel(b)
+      return level === 'warning'
+    }).length
   } catch (e) {
     // ignore
   }
@@ -222,6 +246,125 @@ onMounted(() => {
               >
                 {{ overdueCount }}
               </span>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="pendingBorrows.length > 0"
+          class="mt-6 overflow-hidden rounded-2xl border shadow-card transition-all duration-300"
+          :class="[
+            overdueCount > 0
+              ? 'border-red-300 bg-red-50/60'
+              : warningCount > 0
+                ? 'border-yellow-300 bg-yellow-50/60'
+                : 'border-paper-300 bg-paper-50',
+          ]"
+        >
+          <button
+            class="flex w-full items-center justify-between gap-3 p-5 text-left transition-colors hover:bg-black/5"
+            @click="showPendingList = !showPendingList"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                :class="[
+                  'flex h-10 w-10 items-center justify-center rounded-xl',
+                  overdueCount > 0
+                    ? 'bg-red-100 text-red-600'
+                    : warningCount > 0
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : 'bg-ink-50 text-ink-600',
+                ]"
+              >
+                <AlertTriangle v-if="overdueCount > 0 || warningCount > 0" class="h-5 w-5" />
+                <BookOpen v-else class="h-5 w-5" />
+              </div>
+              <div>
+                <h3 class="font-serif text-base font-bold text-ink-700">待还提醒</h3>
+                <p class="mt-0.5 text-xs text-charcoal-muted">
+                  您有 <span class="font-semibold" :class="overdueCount > 0 ? 'text-red-600' : warningCount > 0 ? 'text-yellow-700' : 'text-ink-600'">{{ pendingBorrows.length }}</span> 本图书待归还
+                  <span v-if="overdueCount > 0" class="text-red-600">（含 {{ overdueCount }} 本逾期）</span>
+                  <span v-else-if="warningCount > 0" class="text-yellow-700">（{{ warningCount }} 本即将到期）</span>
+                </p>
+              </div>
+            </div>
+            <ChevronDown
+              :class="[
+                'h-5 w-5 shrink-0 text-charcoal-muted transition-transform duration-300',
+                showPendingList ? 'rotate-180' : '',
+              ]"
+            />
+          </button>
+
+          <div
+            v-show="showPendingList"
+            class="border-t border-paper-300/60 bg-paper-50/50"
+          >
+            <div class="divide-y divide-paper-300/60">
+              <div
+                v-for="borrow in pendingBorrows"
+                :key="borrow.id"
+                :class="[
+                  'flex items-center gap-3 px-5 py-3 transition-colors',
+                  getBorrowStyles(borrow).bgClass,
+                ]"
+              >
+                <div class="w-10 shrink-0">
+                  <BookCover
+                    v-if="borrow.book"
+                    :color="borrow.book.cover_color"
+                    :title="borrow.book.title"
+                    :author="borrow.book.author"
+                    size="xs"
+                  />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="line-clamp-1 font-serif text-sm font-semibold text-ink-700">
+                      {{ borrow.book?.title || '—' }}
+                    </p>
+                    <span
+                      v-if="getBorrowDueLevel(borrow) !== 'normal'"
+                      :class="[
+                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+                        getBorrowStyles(borrow).badgeClass,
+                      ]"
+                    >
+                      <span
+                        class="h-1.5 w-1.5 rounded-full"
+                        :class="getBorrowDueLevel(borrow) === 'danger' ? 'bg-red-500' : 'bg-yellow-500'"
+                      ></span>
+                      {{ getBorrowDueLevel(borrow) === 'danger' ? '已逾期' : '即将到期' }}
+                    </span>
+                  </div>
+                  <p class="mt-0.5 text-xs text-charcoal-muted">
+                    {{ borrow.book?.author }} · 应还 {{ formatDate(borrow.due_date) }}
+                  </p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <p
+                    :class="[
+                      'font-mono text-sm font-bold',
+                      getBorrowStyles(borrow).textClass,
+                    ]"
+                  >
+                    {{ dueCountdown(borrow.due_date, borrow.return_date) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="border-t border-paper-300/60 px-5 py-3">
+              <BaseButton
+                size="sm"
+                variant="ghost"
+                block
+                @click="$router.push({ name: 'borrows' })"
+              >
+                <template #icon>
+                  <BookOpen class="h-3.5 w-3.5" />
+                </template>
+                查看全部借阅记录
+              </BaseButton>
             </div>
           </div>
         </div>

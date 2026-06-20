@@ -1,7 +1,5 @@
 package main
 
-import "time"
-
 type User struct {
 	ID           int64  `db:"id" json:"id"`
 	Username     string `db:"username" json:"username"`
@@ -28,15 +26,15 @@ type Book struct {
 }
 
 type Borrow struct {
-	ID         int64  `db:"id" json:"id"`
-	UserID     int64  `db:"user_id" json:"user_id"`
-	BookID     int64  `db:"book_id" json:"book_id"`
-	BorrowDate string `db:"borrow_date" json:"borrow_date"`
-	DueDate    string `db:"due_date" json:"due_date"`
-	ReturnDate string `db:"return_date" json:"return_date"`
-	Status     string `db:"status" json:"status"`
-	User       *User  `json:"user,omitempty"`
-	Book       *Book  `json:"book,omitempty"`
+	ID         int64   `db:"id" json:"id"`
+	UserID     int64   `db:"user_id" json:"user_id"`
+	BookID     int64   `db:"book_id" json:"book_id"`
+	BorrowDate string  `db:"borrow_date" json:"borrow_date"`
+	DueDate    string  `db:"due_date" json:"due_date"`
+	ReturnDate *string `db:"return_date" json:"return_date"`
+	Status     string  `db:"status" json:"status"`
+	User       *User   `json:"user,omitempty"`
+	Book       *Book   `json:"book,omitempty"`
 }
 
 type CategoryCount struct {
@@ -72,22 +70,4 @@ type loginResult struct {
 	User  User   `json:"user"`
 }
 
-func normTime(s string) string {
-	if s == "" {
-		return ""
-	}
-	layouts := []string{
-		"2006-01-02 15:04:05.999999999-07:00",
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05",
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02",
-	}
-	for _, l := range layouts {
-		if t, err := time.Parse(l, s); err == nil {
-			return t.UTC().Format(time.RFC3339)
-		}
-	}
-	return s
-}
+

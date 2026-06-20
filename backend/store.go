@@ -79,6 +79,63 @@ func seed() {
 	if n == 0 {
 		seedBooks()
 	}
+
+	var bn int64
+	db.Get(&bn, "SELECT COUNT(*) FROM borrow_records")
+	if bn == 0 {
+		seedBorrows()
+	}
+}
+
+func seedBorrows() {
+	var zhangsanID, lisiID int64
+	db.Get(&zhangsanID, "SELECT id FROM users WHERE username='zhangsan'")
+	db.Get(&lisiID, "SELECT id FROM users WHERE username='lisi'")
+
+	var book1ID, book2ID, book3ID, book4ID, book5ID, book6ID int64
+	db.Get(&book1ID, "SELECT id FROM books WHERE title='百年孤独'")
+	db.Get(&book2ID, "SELECT id FROM books WHERE title='三体'")
+	db.Get(&book3ID, "SELECT id FROM books WHERE title='活着'")
+	db.Get(&book4ID, "SELECT id FROM books WHERE title='围城'")
+	db.Get(&book5ID, "SELECT id FROM books WHERE title='时间简史'")
+	db.Get(&book6ID, "SELECT id FROM books WHERE title='人类简史'")
+
+	if zhangsanID > 0 && lisiID > 0 && book1ID > 0 {
+		db.MustExec(
+			"INSERT INTO borrow_records (user_id, book_id, borrow_date, due_date, status) VALUES (?, ?, datetime('now','-35 days'), datetime('now','-5 days'), 'overdue')",
+			zhangsanID, book1ID,
+		)
+		db.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=?", book1ID)
+
+		db.MustExec(
+			"INSERT INTO borrow_records (user_id, book_id, borrow_date, due_date, status) VALUES (?, ?, datetime('now','-28 days'), datetime('now','+2 days'), 'borrowed')",
+			zhangsanID, book2ID,
+		)
+		db.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=?", book2ID)
+
+		db.MustExec(
+			"INSERT INTO borrow_records (user_id, book_id, borrow_date, due_date, status) VALUES (?, ?, datetime('now','-20 days'), datetime('now','+10 days'), 'borrowed')",
+			zhangsanID, book3ID,
+		)
+		db.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=?", book3ID)
+
+		db.MustExec(
+			"INSERT INTO borrow_records (user_id, book_id, borrow_date, due_date, return_date, status) VALUES (?, ?, datetime('now','-40 days'), datetime('now','-10 days'), datetime('now','-8 days'), 'returned')",
+			zhangsanID, book4ID,
+		)
+
+		db.MustExec(
+			"INSERT INTO borrow_records (user_id, book_id, borrow_date, due_date, status) VALUES (?, ?, datetime('now','-32 days'), datetime('now','-2 days'), 'overdue')",
+			lisiID, book5ID,
+		)
+		db.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=?", book5ID)
+
+		db.MustExec(
+			"INSERT INTO borrow_records (user_id, book_id, borrow_date, due_date, status) VALUES (?, ?, datetime('now','-27 days'), datetime('now','+3 days'), 'borrowed')",
+			lisiID, book6ID,
+		)
+		db.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=?", book6ID)
+	}
 }
 
 func ensureUser(username, password, name, role, email string) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRouter, RouterView } from 'vue-router'
 import {
   BookMarked,
   LayoutDashboard,
@@ -100,7 +100,7 @@ function goFront() {
       </header>
 
       <main class="flex-1 px-4 py-6 sm:px-6 sm:py-8">
-        <slot />
+        <RouterView />
       </main>
     </div>
   </div>
