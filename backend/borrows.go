@@ -154,15 +154,15 @@ func handleBorrow(c *gin.Context) {
 	}
 	uid := getUID(c)
 	tx := db.MustBegin()
-	var avail int
-	err := tx.Get(&avail, "SELECT available_copies FROM books WHERE id=?", body.BookID)
-	if err != nil || avail <= 0 {
+
+	tx.MustExec("INSERT INTO borrow_records (user_id, book_id, due_date) VALUES (?, ?, datetime('now','+30 days'))", uid, body.BookID)
+	res := tx.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=? AND available_copies > 0", body.BookID)
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
 		tx.Rollback()
 		fail(c, 400, "该书暂无可借副本")
 		return
 	}
-	tx.MustExec("INSERT INTO borrow_records (user_id, book_id, due_date) VALUES (?, ?, datetime('now','+30 days'))", uid, body.BookID)
-	tx.MustExec("UPDATE books SET available_copies = available_copies - 1 WHERE id=?", body.BookID)
 	if err := tx.Commit(); err != nil {
 		fail(c, 500, "借阅失败")
 		return
@@ -199,7 +199,7 @@ func handleReturn(c *gin.Context) {
 		return
 	}
 	tx.MustExec("UPDATE borrow_records SET return_date=datetime('now'), status='returned' WHERE id=?", id)
-	tx.MustExec("UPDATE books SET available_copies = MIN(available_copies+1, total_copies) WHERE id=?", rec.BookID)
+	tx.MustExec("UPDATE books SET available_copies = available_copies + 1 WHERE id=?", rec.BookID)
 	if err := tx.Commit(); err != nil {
 		fail(c, 500, "归还失败")
 		return

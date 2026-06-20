@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -139,6 +140,11 @@ func handleUpdateBook(c *gin.Context) {
 	}
 	if err := db.Get(&old, "SELECT total_copies, available_copies FROM books WHERE id=?", id); err != nil {
 		fail(c, 404, "图书不存在")
+		return
+	}
+	borrowed := old.Total - old.Avail
+	if in.TotalCopies < borrowed {
+		fail(c, 400, fmt.Sprintf("总馆藏不能小于已借出数量（%d 本）", borrowed))
 		return
 	}
 	newAvail := old.Avail + (in.TotalCopies - old.Total)
